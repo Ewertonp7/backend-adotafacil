@@ -1,4 +1,3 @@
-// src/config/blobStorage.js
 const { BlobServiceClient } = require('@azure/storage-blob');
 
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
@@ -13,6 +12,5 @@ const blobServiceClient = new BlobServiceClient(
     `https://${accountName}.blob.core.windows.net/?${sasToken}`
 );
 
-const containerClient = blobServiceClient.getContainerClient(containerName);
 
-module.exports = containerClient;
+module.exports = { blobServiceClient, containerName };

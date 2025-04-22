@@ -11,7 +11,7 @@ const upload = multer({ storage });
 
 // Rota de teste
 router.get('/teste', (req, res) => {
-  res.send('🟢 Rota /api/usuarios/teste funcionando!');
+  res.send('Rota /api/usuarios/teste funcionando!');
 });
 
 // Validações
@@ -52,15 +52,27 @@ function validarCNPJ(cnpj) {
 
 // Função para upload da imagem no Azure
 const uploadParaBlobAzure = async (file) => {
+  if (!file) {
+    throw new Error('Arquivo não fornecido para upload');
+  }
+
   const blobName = `${Date.now()}-${file.originalname}`;
+  console.log('Preparando upload para Azure com nome:', blobName);
   const containerClient = blobServiceClient.getContainerClient(containerName);
   const blockBlobClient = containerClient.getBlockBlobClient(blobName);
 
-  await blockBlobClient.uploadData(file.buffer, {
-    blobHTTPHeaders: { blobContentType: file.mimetype },
-  });
+  try {
+    console.log('Iniciando upload...');
+    await blockBlobClient.uploadData(file.buffer, {
+      blobHTTPHeaders: { blobContentType: file.mimetype },
+    });
+    console.log('Upload para Azure concluído com sucesso!');
+  } catch (err) {
+    console.error('Erro no upload para o Azure Blob:', err.message);
+    throw err;
+  }
 
-  return blockBlobClient.url;
+  return blockBlobClient.url;  // Retorna a URL do arquivo no Blob
 };
 
 // GET - Buscar dados do usuário
@@ -82,18 +94,16 @@ router.get('/:id', async (req, res) => {
 });
 
 // PUT - Atualizar dados do usuário
-router.put('/:id', upload.single('imagem'), async (req, res) => {
+router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { nome, email, telefone, senha, cpfOuCnpj } = req.body;
-  let imagem_url = null;
+  const { nome, email, telefone, senha, imagem_url, cpfOuCnpj } = req.body;
+  let imagem_urlFinal = imagem_url || null;
 
   try {
-    // Validar email
     if (email && !validarEmail(email)) {
       return res.status(400).json({ erro: 'Email inválido.' });
     }
 
-    // Verificar se o e-mail está em uso por outro usuário
     if (email) {
       const [emailRows] = await db.execute(
         'SELECT id_usuario FROM usuarios WHERE email = ? AND id_usuario != ?',
@@ -104,7 +114,6 @@ router.put('/:id', upload.single('imagem'), async (req, res) => {
       }
     }
 
-    // Validação de CPF ou CNPJ
     if (cpfOuCnpj) {
       const num = cpfOuCnpj.replace(/\D/g, '');
       if (num.length === 11 && !validarCPF(num)) {
@@ -115,12 +124,12 @@ router.put('/:id', upload.single('imagem'), async (req, res) => {
       }
     }
 
-    // Upload da imagem se enviada
+    // Verificar se a imagem foi enviada, se não, usar a URL fornecida
     if (req.file) {
-      imagem_url = await uploadParaBlobAzure(req.file);
+      imagem_urlFinal = await uploadParaBlobAzure(req.file);  // Atualizar a URL da imagem no Azure
     }
 
-    // Montar a query dinamicamente
+    // Atualize o banco de dados
     let query = 'UPDATE usuarios SET nome = ?, email = ?, telefone = ?';
     const values = [nome, email, telefone];
 
@@ -133,9 +142,9 @@ router.put('/:id', upload.single('imagem'), async (req, res) => {
       values.push(senhaCriptografada);
     }
 
-    if (imagem_url) {
+    if (imagem_urlFinal) {
       query += ', imagem_url = ?';
-      values.push(imagem_url);
+      values.push(imagem_urlFinal);
     }
 
     if (cpfOuCnpj) {
@@ -154,6 +163,7 @@ router.put('/:id', upload.single('imagem'), async (req, res) => {
     await db.execute(query, values);
     res.json({ mensagem: 'Usuário atualizado com sucesso!' });
   } catch (error) {
+    console.error('Erro ao atualizar usuário:', error);
     res.status(500).json({ erro: 'Erro ao atualizar usuário', detalhes: error.message });
   }
 });
