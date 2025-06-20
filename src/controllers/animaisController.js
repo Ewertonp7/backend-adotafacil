@@ -154,6 +154,7 @@ const listAndFilterAnimais = async (req, res) => {
         SELECT
             a.id_animal, a.nome, a.especie, a.raca, a.idade, a.cor, a.detalhes_cor, a.porte, a.sexo,
             a.descricao, a.imagem_url, a.id_situacao, a.data_cadastro, a.id_usuario,
+            u.cidade, u.estado,
             CASE WHEN fav.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_favorited
         FROM animais AS a
         INNER JOIN usuarios AS u ON a.id_usuario = u.id_usuario
@@ -193,7 +194,9 @@ const listAndFilterAnimais = async (req, res) => {
                 idade: row.idade, cor: row.cor, detalhes_cor: row.detalhes_cor, porte: row.porte, 
                 sexo: row.sexo, descricao: row.descricao, imagens: imagensUrls, 
                 id_situacao: row.id_situacao, data_cadastro: row.data_cadastro, id_usuario: row.id_usuario, 
-                is_favorited: row.is_favorited === 1 
+                is_favorited: row.is_favorited === 1,
+                cidade: row.cidade,
+                estado: row.estado
             };
         });
         return res.status(200).json(animaisEncontrados);
