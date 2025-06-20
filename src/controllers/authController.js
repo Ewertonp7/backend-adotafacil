@@ -24,7 +24,17 @@ const cadastrarUsuario = async (req, res) => {
         if (senha.length < 6) {
             return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
         }
-        // ... outras validações que você já tem ...
+         if (cnpj) {
+            if (!/^\d{14}$/.test(cnpj)) {
+                return res.status(400).json({ error: 'CNPJ deve conter exatamente 14 dígitos.' });
+            }
+        } else if (cpf) {
+            if (!/^\d{11}$/.test(cpf)) {
+                return res.status(400).json({ error: 'CPF deve conter exatamente 11 dígitos.' });
+            }
+        } else {
+            return res.status(400).json({ error: 'CPF ou CNPJ deve ser fornecido.' });
+        }
 
         const senhaCriptografada = await bcrypt.hash(senha, 10);
         const dataCadastro = new Date();
@@ -82,6 +92,7 @@ const loginUsuario = async (req, res) => {
 
     try {
         const [rows] = await db.execute('SELECT * FROM usuarios WHERE email = ?', [email]);
+
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Usuário não encontrado.' });
         }
@@ -93,11 +104,12 @@ const loginUsuario = async (req, res) => {
             return res.status(401).json({ error: 'Senha incorreta.' });
         }
 
-        // --- MUDANÇA: GERA E RETORNA O TOKEN ---
+        // --- MUDANÇA PRINCIPAL: GERANDO O TOKEN ---
+        const jwt = require('jsonwebtoken');
         const token = jwt.sign(
             { id: usuario.id_usuario, email: usuario.email },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
+            process.env.JWT_SECRET, // Lê a chave secreta do .env
+            { expiresIn: '24h' } // Token expira em 24 horas
         );
 
         res.status(200).json({
