@@ -20,6 +20,7 @@ const usuariosRoutes = require('./src/routes/usuarios');
 app.use('/api', uploadRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/localidades', require('./src/routes/localidades'));
 
 // Montar as rotas de animais sob o prefixo /api/animais
 app.use('/api/animais', animaisRoutes); // CORRIGIDO AQUI
