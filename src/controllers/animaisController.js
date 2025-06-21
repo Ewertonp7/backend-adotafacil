@@ -50,29 +50,45 @@ const parseImagemUrl = (imagemUrlData, animalId) => {
 // --- FUNÇÕES DO CONTROLLER ---
 
 // Sua função original, sem alterações
+// SUBSTITUA sua função cadastrarAnimal por esta:
 const cadastrarAnimal = async (req, res) => {
-    const { id_usuario, nome, idade, cor, sexo, porte, descricao, especie, raca, id_situacao, detalhes_cor } = req.body;
-    if (!id_usuario || !nome || !idade || !sexo || !porte || !especie || !raca || !id_situacao) {
-        return res.status(400).json({ message: "Dados incompletos para cadastrar o animal." });
+    // Adicionado 'meses' na desestruturação
+    const { id_usuario, nome, idade, meses, cor, detalhes_cor, sexo, porte, descricao, especie, raca, id_situacao } = req.body;
+
+    if (!id_usuario || !nome || cor === undefined || sexo === undefined || porte === undefined || especie === undefined || raca === undefined || id_situacao === undefined) {
+        return res.status(400).json({ message: "Dados obrigatórios faltando para cadastrar o animal." });
     }
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: "Nenhuma imagem enviada para o cadastro." });
     }
-    const uploadedImageUrls = [];
+
     try {
+        const uploadedImageUrls = [];
         for (const file of req.files) {
             const imageUrl = await uploadImageToAzure(file.buffer, file.originalname);
             uploadedImageUrls.push({ url: imageUrl });
         }
+
         const imagemUrlJsonString = JSON.stringify(uploadedImageUrls);
+
+        // Query corrigida com 14 colunas e 13 placeholders + NOW()
         const sql = `
-            INSERT INTO animais (id_usuario, nome, idade, cor, sexo, porte, descricao, especie, raca, id_situacao, imagem_url, data_cadastro, detalhes_cor)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`;
-        const values = [id_usuario, nome, idade, cor, sexo, porte, descricao, especie, raca, id_situacao, imagemUrlJsonString, detalhes_cor];
+            INSERT INTO animais (id_usuario, nome, idade, meses, cor, detalhes_cor, sexo, porte, descricao, especie, raca, id_situacao, imagem_url, data_cadastro)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+
+        // Array de valores corrigido com 13 itens na ordem correta
+        const values = [
+            id_usuario, nome, idade || 0, meses || 0, cor, detalhes_cor, sexo, porte, 
+            descricao, especie, raca, id_situacao, imagemUrlJsonString
+        ];
+
         const [result] = await db.query(sql, values);
+
         if (result.affectedRows > 0) {
             return res.status(201).json({ message: "Animal cadastrado com sucesso!", id_animal: result.insertId });
-        } else { throw new Error("Nenhuma linha afetada ao inserir no banco de dados."); }
+        } else {
+            throw new Error("Nenhuma linha afetada ao inserir no banco de dados.");
+        }
     } catch (error) {
         console.error("Erro durante o cadastro do animal:", error);
         res.status(500).json({ error: 'Erro no servidor ao cadastrar o animal.', details: error.message });
@@ -148,11 +164,11 @@ const getAnimalById = async (req, res) => {
 // Sua função original, mas com o JOIN e ORDER BY que fizemos antes
 const listAndFilterAnimais = async (req, res) => {
     console.log('Iniciando busca e filtro de animais com JOIN de localização...');
-    const { nome, raca, min_idade, max_idade, sexo, porte, busca, id_situacao, id_usuario, estado, cidade, bairro } = req.query;
+    const { nome, raca, min_idade, max_idade, min_meses, max_meses, sexo, porte, busca, id_situacao, id_usuario, estado, cidade, bairro } = req.query;
 
     let sql = `
         SELECT
-            a.id_animal, a.nome, a.especie, a.raca, a.idade, a.cor, a.detalhes_cor, a.porte, a.sexo,
+            a.id_animal, a.nome, a.especie, a.raca, a.idade, a.meses, a.cor, a.detalhes_cor, a.porte, a.sexo,
             a.descricao, a.imagem_url, a.id_situacao, a.data_cadastro, a.id_usuario,
             u.cidade, u.estado,
             CASE WHEN fav.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_favorited
@@ -171,11 +187,23 @@ const listAndFilterAnimais = async (req, res) => {
     // Filtros do animal
     if (nome) { sql += ` AND a.nome LIKE ?`; values.push(`%${nome}%`); }
     if (raca) { sql += ` AND a.raca LIKE ?`; values.push(`%${raca}%`); }
-    if (min_idade && !isNaN(parseInt(min_idade))) { sql += ` AND a.idade >= ?`; values.push(parseInt(min_idade)); }
-    if (max_idade && !isNaN(parseInt(max_idade))) { sql += ` AND a.idade <= ?`; values.push(parseInt(max_idade)); }
     if (sexo) { sql += ` AND a.sexo = ?`; values.push(sexo); }
     if (porte) { sql += ` AND a.porte = ?`; values.push(porte); }
     if (busca) { sql += ` AND (a.nome LIKE ? OR a.raca LIKE ? OR a.descricao LIKE ? OR a.especie LIKE ?)`; values.push(`%${busca}%`, `%${busca}%`, `%${busca}%`, `%${busca}%`); }
+
+    if (min_idade || min_meses) {
+        const totalMinMeses = (parseInt(min_idade || 0) * 12) + parseInt(min_meses || 0);
+        // Usa IFNULL para tratar meses nulos no banco como 0
+        sql += ` AND ((a.idade * 12) + IFNULL(a.meses, 0)) >= ?`;
+        values.push(totalMinMeses);
+    }
+    if (max_idade || max_meses) {
+        // Usa um valor alto como padrão para não limitar a busca se só um campo for preenchido
+        const totalMaxMeses = (parseInt(max_idade || 100) * 12) + parseInt(max_meses || 11);
+        sql += ` AND ((a.idade * 12) + IFNULL(a.meses, 0)) <= ?`;
+        values.push(totalMaxMeses);
+    }
+
 
     // Filtros de Localização (agora na tabela de usuários 'u')
     if (estado) { sql += ` AND u.estado = ?`; values.push(estado); }
@@ -183,7 +211,7 @@ const listAndFilterAnimais = async (req, res) => {
     if (bairro) { sql += ` AND u.bairro LIKE ?`; values.push(`%${bairro}%`); }
     
     // Lógica de ranqueamento
-    sql += ` ORDER BY CASE WHEN LOWER(a.cor) = 'preto' THEN 0 ELSE 1 END ASC, a.idade DESC, a.data_cadastro DESC`;
+    sql += ` ORDER BY CASE WHEN LOWER(a.cor) = 'preto' THEN 0 ELSE 1 END ASC, a.idade DESC, a.meses DESC, a.data_cadastro DESC`;
 
     try {
         const [rows] = await db.query(sql, values);
@@ -191,7 +219,7 @@ const listAndFilterAnimais = async (req, res) => {
             const imagensUrls = parseImagemUrl(row.imagem_url, row.id_animal);
             return { 
                 id: row.id_animal, nome: row.nome, especie: row.especie, raca: row.raca, 
-                idade: row.idade, cor: row.cor, detalhes_cor: row.detalhes_cor, porte: row.porte, 
+                idade: row.idade, meses: row.meses, cor: row.cor, detalhes_cor: row.detalhes_cor, porte: row.porte, 
                 sexo: row.sexo, descricao: row.descricao, imagens: imagensUrls, 
                 id_situacao: row.id_situacao, data_cadastro: row.data_cadastro, id_usuario: row.id_usuario, 
                 is_favorited: row.is_favorited === 1,
@@ -225,7 +253,7 @@ const toggleFavoriteStatus = async (req, res) => {
 // <<<< FUNÇÃO ATUALIZADA >>>>
 const atualizarAnimal = async (req, res) => {
     const idAnimal = parseInt(req.params.idAnimal);
-    const { id_usuario, nome, idade, cor, detalhes_cor, sexo, porte, descricao, especie, raca, id_situacao, imagens_existentes } = req.body;
+    const { id_usuario, nome, idade, meses, cor, detalhes_cor, sexo, porte, descricao, especie, raca, id_situacao, imagens_existentes } = req.body;
     const novasImagens = req.files || [];
 
     try {
@@ -246,12 +274,12 @@ const atualizarAnimal = async (req, res) => {
         const imagemUrlJsonString = JSON.stringify(finalImageUrls.map(url => ({ url: url })));
 
         const sql = `
-            UPDATE animais SET nome = ?, idade = ?, cor = ?, detalhes_cor = ?, sexo = ?, porte = ?, 
+            UPDATE animais SET nome = ?, idade = ?, meses = ?, cor = ?, detalhes_cor = ?, sexo = ?, porte = ?, 
             descricao = ?, especie = ?, raca = ?, id_situacao = ?, imagem_url = ?
             WHERE id_animal = ? AND id_usuario = ?`;
         
         const values = [
-            nome, idade, cor, detalhes_cor, sexo, porte, descricao, especie, raca,
+            nome, idade, meses || 0, cor, detalhes_cor, sexo, porte, descricao, especie, raca,
             id_situacao, imagemUrlJsonString, idAnimal, id_usuario
         ];
 
