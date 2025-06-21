@@ -334,18 +334,64 @@ const excluirAnimal = async (req, res) => {
 };
 
 // --- Função para buscar animais favoritos de um usuário ---
+// --- Função para buscar animais favoritos de um usuário ---
 const getFavoritedAnimalsByUser = async (req, res) => {
-    // (Implementação mantida da resposta anterior)
     console.log(`Iniciando busca de animais favoritos para usuário ${req.params.idUsuario}`);
     const idUsuario = parseInt(req.params.idUsuario);
     if (isNaN(idUsuario)) { return res.status(400).json({ message: 'ID do usuário inválido.' }); }
+    
     try {
-        const sql = ` SELECT a.id_animal, a.nome, a.especie, a.raca, a.idade, a.cor, a.porte, a.sexo, a.descricao, a.imagem_url, a.id_situacao, a.data_cadastro, a.id_usuario FROM animais a JOIN favoritos uf ON a.id_animal = uf.animal_id WHERE uf.user_id = ? ORDER BY a.id_animal`;
+        // ALTERAÇÃO 1: A consulta SQL foi atualizada para incluir um JOIN com a tabela 'usuarios'
+        // e selecionar os campos 'cidade' e 'estado'.
+        const sql = `
+            SELECT 
+                a.id_animal, a.nome, a.especie, a.raca, a.idade, a.meses, a.cor, a.porte, a.sexo, 
+                a.descricao, a.imagem_url, a.id_situacao, a.data_cadastro, a.id_usuario,
+                u.cidade, u.estado 
+            FROM animais a 
+            INNER JOIN favoritos uf ON a.id_animal = uf.animal_id 
+            INNER JOIN usuarios u ON a.id_usuario = u.id_usuario
+            WHERE uf.user_id = ? 
+            ORDER BY a.id_animal`;
+
         const [rows] = await db.query(sql, [idUsuario]);
-        if (rows.length === 0) { console.log(`Nenhum favorito encontrado para usuário ${idUsuario}`); return res.status(200).json([]); }
-        const favoritedAnimais = rows.map(row => { const imagensUrls = parseImagemUrl(row.imagem_url, row.id_animal); return { id: row.id_animal, nome: row.nome, especie: row.especie, raca: row.raca, idade: row.idade, cor: row.cor, porte: row.porte, sexo: row.sexo, descricao: row.descricao, imagens: imagensUrls, id_situacao: row.id_situacao, data_cadastro: row.data_cadastro, id_usuario: row.id_usuario, is_favorited: true }; });
+        
+        if (rows.length === 0) { 
+            console.log(`Nenhum favorito encontrado para usuário ${idUsuario}`); 
+            return res.status(200).json([]); 
+        }
+
+        const favoritedAnimais = rows.map(row => { 
+            const imagensUrls = parseImagemUrl(row.imagem_url, row.id_animal); 
+            
+            // ALTERAÇÃO 2: Adicionados 'cidade' e 'estado' ao objeto de retorno do JSON.
+            return { 
+                id: row.id_animal, 
+                nome: row.nome, 
+                especie: row.especie, 
+                raca: row.raca, 
+                idade: row.idade, 
+                meses: row.meses,
+                cor: row.cor, 
+                porte: row.porte, 
+                sexo: row.sexo, 
+                descricao: row.descricao, 
+                imagens: imagensUrls, 
+                id_situacao: row.id_situacao, 
+                data_cadastro: row.data_cadastro, 
+                id_usuario: row.id_usuario, 
+                is_favorited: true,
+                cidade: row.cidade,      // Campo adicionado
+                estado: row.estado       // Campo adicionado
+            }; 
+        });
+
         return res.status(200).json(favoritedAnimais);
-    } catch (error) { console.error(`Erro ao buscar animais favoritos para usuário ${idUsuario}:`, error); res.status(500).json({ error: 'Erro no servidor ao buscar favoritos.' }); }
+        
+    } catch (error) { 
+        console.error(`Erro ao buscar animais favoritos para usuário ${idUsuario}:`, error); 
+        res.status(500).json({ error: 'Erro no servidor ao buscar favoritos.' }); 
+    }
 };
 
 // --- Exporte todas as funções ---
