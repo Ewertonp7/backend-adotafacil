@@ -59,11 +59,11 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
 
-      - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
-        with:
-          app-name: 'adotafacil'
-          slot-name: 'Production'
-          package: .
+     - name: 'Deploy to Azure Web App'
+  uses: azure/webapps-deploy@v3
+  id: deploy-to-webapp
+  with:
+    app-name: adotafacil-backend-nodejs
+    package: .
+
           
