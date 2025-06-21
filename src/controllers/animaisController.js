@@ -283,6 +283,12 @@ const atualizarAnimal = async (req, res) => {
             id_situacao, imagemUrlJsonString, idAnimal, id_usuario
         ];
 
+// Se o status está sendo mudado para "Adotado" (ID 2), remove de todos os favoritos.
+if (parseInt(id_situacao) === 2) {
+    console.log(`Animal ${idAnimal} marcado como adotado. Removendo de todas as listas de favoritos...`);
+    await db.query('DELETE FROM favoritos WHERE animal_id = ?', [idAnimal]);
+}
+
         await db.query(sql, values);
         return res.status(200).json({ message: "Animal atualizado com sucesso!" });
     } catch (error) {
