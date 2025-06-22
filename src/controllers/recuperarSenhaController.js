@@ -1,10 +1,10 @@
 const bcrypt = require("bcryptjs");
-const sendgrid = require("@sendgrid/mail");
 const db = require("../config/db");
+// ADICIONADO: Importa nosso novo serviço de email
+const { enviarEmailRecuperacao } = require('../services/emailService');
 
-sendgrid.setApiKey(process.env.SENDGRID_API_KEY);
-
-const codigos = {}; // Armazenamento temporário em memória: { email: { codigo, expira } }
+// REMOVIDO: A configuração e importação do Sendgrid não são mais necessárias.
+// sendgrid.setApiKey(process.env.SENDGRID_API_KEY);
 
 function gerarCodigo() {
   return Math.floor(100000 + Math.random() * 900000).toString(); // 6 dígitos
@@ -13,7 +13,7 @@ function gerarCodigo() {
 // Enviar código para o usuário
 exports.enviarCodigo = async (req, res) => {
   const { email, documento, isCnpj } = req.body;
-  console.log('Requisição recebida:', req.body);
+  console.log('Requisição recebida para enviar código:', req.body);
 
   if (!email || !documento) {
     return res.status(400).json({ erro: "Preencha e-mail e documento." });
@@ -27,45 +27,42 @@ exports.enviarCodigo = async (req, res) => {
     );
 
     if (result.length === 0) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
+      return res.status(404).json({ erro: "Usuário não encontrado com os dados informados." });
     }
 
-    // Verifica se já existe um código de recuperação ativo
     const [codigoExistente] = await db.query(
       'SELECT * FROM recuperacao_senha WHERE email = ? AND expira > NOW()',
       [email]
     );
 
     if (codigoExistente.length > 0) {
-      return res.status(400).json({ erro: "Já existe um código ativo. Verifique seu e-mail." });
+      return res.status(400).json({ erro: "Um código de recuperação já foi enviado. Verifique seu e-mail, inclusive a caixa de spam." });
     }
 
     const codigo = gerarCodigo();
     const expira = new Date(Date.now() + 10 * 60 * 1000); // Expira em 10 minutos
 
-    // Salvar no banco de dados
     await db.query(
       'INSERT INTO recuperacao_senha (email, codigo, expira) VALUES (?, ?, ?)',
       [email, codigo, expira]
     );
 
-    // Enviar o e-mail com o código
-    await sendgrid.send({
-      to: email,
-      from: "ewerton.lucio78@gmail.com", // Troque pelo seu e-mail verificado
-      subject: "Código de Recuperação de Senha",
-      text: `Seu código é: ${codigo}`,
-      html: `<p>Seu código de verificação é: <strong>${codigo}</strong></p>`
-    });
+    // ALTERADO: Troca do Sendgrid pelo Nodemailer
+    const emailEnviadoComSucesso = await enviarEmailRecuperacao(email, codigo);
 
-    return res.json({ mensagem: "Código enviado." });
+    if (!emailEnviadoComSucesso) {
+        // Se o email falhar, não adianta continuar. Retorna um erro.
+        return res.status(500).json({ erro: "Houve uma falha ao enviar o e-mail. Tente novamente mais tarde." });
+    }
+
+    return res.json({ mensagem: "Código de recuperação enviado para o seu e-mail." });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ erro: "Erro ao enviar o código." });
+    console.error("Erro no processo de enviar código:", error);
+    return res.status(500).json({ erro: "Erro interno do servidor ao processar sua solicitação." });
   }
 };
 
-// Confirmar o código de recuperação e atualizar a senha
+// A função confirmarCodigo permanece a mesma, não precisa de alteração.
 exports.confirmarCodigo = async (req, res) => {
   const { email, codigo, novaSenha } = req.body;
 
@@ -74,43 +71,37 @@ exports.confirmarCodigo = async (req, res) => {
   }
 
   try {
-    // Buscar o código no banco de dados
     const [registro] = await db.query(
       'SELECT * FROM recuperacao_senha WHERE email = ? AND codigo = ?',
       [email, codigo]
     );
 
     if (registro.length === 0) {
-      return res.status(400).json({ erro: "Código inválido." });
+      return res.status(400).json({ erro: "Código inválido ou já utilizado." });
     }
 
-    // Verificar se o código não expirou
     if (new Date() > new Date(registro[0].expira)) {
-      // Excluir o código expirado
       await db.query('DELETE FROM recuperacao_senha WHERE email = ?', [email]);
-      return res.status(400).json({ erro: "Código expirado." });
+      return res.status(400).json({ erro: "Código expirado. Por favor, solicite um novo." });
     }
 
-    // Criptografar a nova senha
     const senhaCriptografada = await bcrypt.hash(novaSenha, 10);
 
-    // Atualizar a senha no banco de dados
     await db.query("UPDATE usuarios SET senha = ? WHERE email = ?", [
       senhaCriptografada,
       email,
     ]);
 
-    // Excluir o código após o uso
     await db.query('DELETE FROM recuperacao_senha WHERE email = ?', [email]);
 
     return res.json({ mensagem: "Senha atualizada com sucesso." });
   } catch (error) {
-    console.error(error);
+    console.error("Erro ao confirmar código e atualizar senha:", error);
     return res.status(500).json({ erro: "Erro ao atualizar senha." });
   }
 };
 
-// Alterar a senha diretamente, caso o usuário já tenha um novo código
+// A função alterarSenha permanece a mesma, não precisa de alteração.
 exports.alterarSenha = async (req, res) => {
   const { email, novaSenha } = req.body;
 
@@ -128,7 +119,7 @@ exports.alterarSenha = async (req, res) => {
 
     return res.json({ mensagem: "Senha atualizada com sucesso." });
   } catch (error) {
-    console.error(error);
+    console.error("Erro ao alterar senha:", error);
     return res.status(500).json({ erro: "Erro ao atualizar senha." });
   }
 };
